@@ -1,0 +1,6 @@
+node_modules
+.env
+server/node_modules
+client/node_modules
+database.sqlite
+booksala_project.zip
