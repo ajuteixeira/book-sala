@@ -34,10 +34,10 @@ export default function Dashboard() {
     quantity: '1',
     reason: 'Estudo individual',
   });
-  // FAQ state
+  // faq state
   const [showFAQ, setShowFAQ] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
-  // History state
+  // history state
   const [history, setHistory] = useState([]);
   const [historyPage, setHistoryPage] = useState(1);
   const [historySearchFilter, setHistorySearchFilter] = useState('');
@@ -47,7 +47,7 @@ export default function Dashboard() {
     total: 0,
     totalPages: 0,
   });
-  // Admin reservations pagination (5 cols × 3 rows = 15 per page)
+  // admin reservations pagination (5 cols × 3 rows = 15 per page)
   const [adminResPage, setAdminResPage] = useState(1);
   const [adminRoomFilter, setAdminRoomFilter] = useState('');
   const [allRooms, setAllRooms] = useState([]);
@@ -84,12 +84,12 @@ export default function Dashboard() {
     if (!dateStr) return null;
     const d = new Date(dateStr + 'T00:00:00');
     const dow = d.getDay();
-    if (dow === 0) return null; // Sunday closed
-    if (dow === 6) return { open: '08:00', close: '13:55' }; // Saturday
-    return { open: '07:00', close: '21:55' }; // Mon-Fri
+    if (dow === 0) return null; // sunday closed
+    if (dow === 6) return { open: '08:00', close: '13:55' }; // saturday
+    return { open: '07:00', close: '21:55' }; // monday-friday
   };
 
-  // Generate all valid times with minutes in 15-minute intervals (00, 15, 30, 45)
+  // generate all valid times with minutes in 15-minute intervals (00, 15, 30, 45)
   const generateTimeOptions = (openTime, closeTime) => {
     const options = [];
     const parseTime = (t) => {
@@ -117,7 +117,7 @@ export default function Dashboard() {
   const dd = String(todayObj.getDate()).padStart(2, '0');
   const todayISO = `${yyyy}-${mm}-${dd}`;
 
-  // Create minDate in local time to avoid timezone issues
+  // create minDate in local time to avoid timezone issues
   const minDate = new Date(yyyy, todayObj.getMonth(), todayObj.getDate());
 
   const maxObj = new Date(todayObj);
@@ -127,8 +127,92 @@ export default function Dashboard() {
   const maxDD = String(maxObj.getDate()).padStart(2, '0');
   const maxISO = `${maxYYYY}-${maxMM}-${maxDD}`;
 
-  // Create maxDate in local time to avoid timezone issues
+  // create maxDate in local time to avoid timezone issues
   const maxDate = new Date(maxYYYY, maxObj.getMonth(), maxObj.getDate());
+
+  // helper: parse time string (HH:MM) to minutes (already lowercase)
+  const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr) return null;
+    const parts = timeStr.split(':');
+    if (parts.length !== 2) return null;
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    return h * 60 + m;
+  };
+
+  // helper: validate reservation time inputs (already lowercase)
+  const validateReservationTimes = (startTime, endTime) => {
+    const startMin = parseTimeToMinutes(startTime);
+    const endMin = parseTimeToMinutes(endTime);
+    if (startMin === null || endMin === null) {
+      return { valid: false, message: 'Preencha horários válidos' };
+    }
+    if (startMin > endMin) {
+      return { valid: false, message: 'Hora de término inválida' };
+    }
+    if (endMin - startMin < 15) {
+      return {
+        valid: false,
+        message: 'Tempo mínimo da reserva é 15 minutos',
+      };
+    }
+    return { valid: true };
+  };
+
+  // helper: validate opening hours (already lowercase)
+  const validateOpeningHours = (dateStr, startTime, endTime) => {
+    const hours = getOpeningHours(dateStr);
+    if (!hours) {
+      return {
+        valid: false,
+        message: 'Biblioteca fechada nesse dia. Selecione outra data.',
+      };
+    }
+    const openMin = parseTimeToMinutes(hours.open);
+    const closeMin = parseTimeToMinutes(hours.close);
+    const startMin = parseTimeToMinutes(startTime);
+    const endMin = parseTimeToMinutes(endTime);
+
+    if (startMin < openMin || endMin > closeMin) {
+      return {
+        valid: false,
+        message: `Horário fora do funcionamento: ${hours.open}–${hours.close}`,
+      };
+    }
+    return { valid: true };
+  };
+
+  // helper: validate time hasn't passed for today (already lowercase)
+  const validateNotPastTime = (dateStr, startTime) => {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const currentTime = now.toTimeString().slice(0, 5);
+
+    if (dateStr === todayStr) {
+      const startMin = parseTimeToMinutes(startTime);
+      const currentMin = parseTimeToMinutes(currentTime);
+      if (startMin <= currentMin) {
+        return {
+          valid: false,
+          message:
+            'Não é possível fazer reservas para horários que já passaram.',
+        };
+      }
+    }
+    return { valid: true };
+  };
+
+  // helper: fetch and update reservations data (already lowercase)
+  const refreshReservations = () => {
+    axios
+      .get(API + '/reservations', {
+        headers: { Authorization: 'Bearer ' + token },
+      })
+      .then((r) => {
+        setReservations(r.data);
+      });
+  };
 
   useEffect(() => {
     if (!token) return;
@@ -140,7 +224,7 @@ export default function Dashboard() {
         console.log('Active reservations:', r.data);
         setReservations(r.data);
       });
-    // Fetch all rooms for filter
+    // fetch all rooms for filter
     axios
       .get(API + '/rooms', {
         headers: { Authorization: 'Bearer ' + token },
@@ -151,7 +235,7 @@ export default function Dashboard() {
       .catch((err) => {
         console.error('Error fetching rooms:', err);
       });
-    // Fetch history
+    // fetch history
     axios
       .get(API + '/reservations/history?page=1', {
         headers: { Authorization: 'Bearer ' + token },
@@ -170,18 +254,8 @@ export default function Dashboard() {
 
   const searchAvailable = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
-    // client-side validation: times
-    const parseTimeToMinutes = (t) => {
-      if (!t) return null;
-      const parts = t.split(':');
-      if (parts.length !== 2) return null;
-      const h = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10);
-      if (Number.isNaN(h) || Number.isNaN(m)) return null;
-      return h * 60 + m;
-    };
 
-    // Validate date is not in the past and within 30 days
+    // validate date is not in the past and within 30 days
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const requested = new Date(search.date + 'T00:00:00');
@@ -191,67 +265,51 @@ export default function Dashboard() {
       return;
     }
 
-    const maxDate = new Date(today);
-    maxDate.setDate(maxDate.getDate() + 30);
-    if (requested > maxDate) {
+    const maxDateCheck = new Date(today);
+    maxDateCheck.setDate(maxDateCheck.getDate() + 30);
+    if (requested > maxDateCheck) {
       setError('Você só pode fazer reservas até 30 dias no futuro.');
       return;
     }
 
-    // For today: validate time hasn't passed yet
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    const currentTime = now.toTimeString().slice(0, 5); // HH:MM
-
-    if (search.date === todayStr) {
-      const startMin = parseTimeToMinutes(search.startTime);
-      const currentMin = parseTimeToMinutes(currentTime);
-      if (startMin <= currentMin) {
-        setError(
-          'Não é possível fazer reservas para horários que já passaram.'
-        );
-        return;
-      }
+    // validate time hasn't passed for today
+    const pastTimeCheck = validateNotPastTime(search.date, search.startTime);
+    if (!pastTimeCheck.valid) {
+      setError(pastTimeCheck.message);
+      return;
     }
 
-    // Validate quantity
+    // validate quantity
     const qty = parseInt(search.quantity, 10);
     if (!qty || qty < 1 || qty > 1000) {
       setError('Informe uma quantidade válida de pessoas');
       return;
     }
 
-    const startMin = parseTimeToMinutes(search.startTime);
-    const endMin = parseTimeToMinutes(search.endTime);
-    if (startMin === null || endMin === null) {
-      setError('Preencha horários válidos');
-      return;
-    }
-    if (startMin > endMin) {
-      setError('Hora de término inválida');
-      return;
-    }
-    if (endMin - startMin < 15) {
-      setError('Tempo mínimo da reserva é 15 minutos');
+    // validate time format and duration
+    const timeValidation = validateReservationTimes(
+      search.startTime,
+      search.endTime
+    );
+    if (!timeValidation.valid) {
+      setError(timeValidation.message);
       return;
     }
 
-    const hours = getOpeningHours(search.date);
-    if (!hours) {
-      setError('Biblioteca fechada nesse dia. Selecione outra data.');
-      return;
-    }
-    const openMin = parseTimeToMinutes(hours.open);
-    const closeMin = parseTimeToMinutes(hours.close);
-    if (startMin < openMin || endMin > closeMin) {
-      setError(`Horário fora do funcionamento: ${hours.open}–${hours.close}`);
+    // validate opening hours
+    const hoursValidation = validateOpeningHours(
+      search.date,
+      search.startTime,
+      search.endTime
+    );
+    if (!hoursValidation.valid) {
+      setError(hoursValidation.message);
       return;
     }
 
-    // Check if user already has an ACTIVE or COMPLETED reservation on the same date
-    // (Only for non-admin users)
+    // check if user already has an active or completed reservation on the same date
+    // (only for non-admin users)
     if (user?.role !== 'admin') {
-      // Combine reservations (ativa) and history (concluída, cancelada)
       const allReservations = [...reservations, ...history];
       const sameDayReservation = allReservations.find(
         (r) =>
@@ -298,33 +356,21 @@ export default function Dashboard() {
 
   const confirmReservation = async () => {
     if (!selectedRoomId) return setError('Selecione uma sala');
-    // validate times before sending
-    const parseTimeToMinutes = (t) => {
-      if (!t) return null;
-      const parts = t.split(':');
-      if (parts.length !== 2) return null;
-      const h = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10);
-      if (Number.isNaN(h) || Number.isNaN(m)) return null;
-      return h * 60 + m;
-    };
-    const sMin = parseTimeToMinutes(search.startTime);
-    const eMin = parseTimeToMinutes(search.endTime);
-    if (sMin === null || eMin === null)
-      return setError('Preencha horários válidos');
-    if (sMin > eMin) return setError('Hora de término inválida');
-    if (eMin - sMin < 15)
-      return setError('Tempo mínimo da reserva é 15 minutos');
 
-    const hours = getOpeningHours(search.date);
-    if (!hours)
-      return setError('Biblioteca fechada nesse dia. Selecione outra data.');
-    const openMin = parseTimeToMinutes(hours.open);
-    const closeMin = parseTimeToMinutes(hours.close);
-    if (sMin < openMin || eMin > closeMin)
-      return setError(
-        `Horário fora do funcionamento: ${hours.open}–${hours.close}`
-      );
+    // validate time format and duration
+    const timeValidation = validateReservationTimes(
+      search.startTime,
+      search.endTime
+    );
+    if (!timeValidation.valid) return setError(timeValidation.message);
+
+    // validate opening hours
+    const hoursValidation = validateOpeningHours(
+      search.date,
+      search.startTime,
+      search.endTime
+    );
+    if (!hoursValidation.valid) return setError(hoursValidation.message);
 
     try {
       setError('');
@@ -344,7 +390,7 @@ export default function Dashboard() {
         headers: { Authorization: 'Bearer ' + token },
       });
       setReservations(r.data);
-      // Atualizar histórico em tempo real (primeira página)
+      // update history in real time (first page)
       const h = await axios.get(API + '/reservations/history?page=1', {
         headers: { Authorization: 'Bearer ' + token },
       });
@@ -372,12 +418,12 @@ export default function Dashboard() {
       await axios.delete(API + '/reservations/' + id, {
         headers: { Authorization: 'Bearer ' + token },
       });
-      // Atualizar reservas ativas
+      // update active reservations
       const r = await axios.get(API + '/reservations', {
         headers: { Authorization: 'Bearer ' + token },
       });
       setReservations(r.data);
-      // Atualizar histórico em tempo real (primeira página)
+      // update history in real time (first page)
       const h = await axios.get(API + '/reservations/history?page=1', {
         headers: { Authorization: 'Bearer ' + token },
       });
@@ -405,23 +451,13 @@ export default function Dashboard() {
       setError('Preencha todos os campos');
       return;
     }
-    // validate times before sending edit
-    const parseTimeToMinutes = (t) => {
-      if (!t) return null;
-      const parts = t.split(':');
-      if (parts.length !== 2) return null;
-      const h = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10);
-      if (Number.isNaN(h) || Number.isNaN(m)) return null;
-      return h * 60 + m;
-    };
-    const sMin = parseTimeToMinutes(editForm.startTime);
-    const eMin = parseTimeToMinutes(editForm.endTime);
-    if (sMin === null || eMin === null)
-      return setError('Preencha horários válidos');
-    if (sMin > eMin) return setError('Hora de término inválida');
-    if (eMin - sMin < 15)
-      return setError('Tempo mínimo da reserva é 15 minutos');
+
+    // validate time format and duration
+    const timeValidation = validateReservationTimes(
+      editForm.startTime,
+      editForm.endTime
+    );
+    if (!timeValidation.valid) return setError(timeValidation.message);
 
     try {
       setError('');
@@ -440,7 +476,7 @@ export default function Dashboard() {
         headers: { Authorization: 'Bearer ' + token },
       });
       setReservations(r.data);
-      // Atualizar histórico em tempo real (primeira página)
+      // update history in real time (first page)
       const h = await axios.get(API + '/reservations/history?page=1', {
         headers: { Authorization: 'Bearer ' + token },
       });
@@ -507,7 +543,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* FAQ button (discrete) and modal */}
+        {/* faq button (discrete) and modal */}
         <button
           onClick={() => setShowFAQ(true)}
           className="fixed bottom-6 right-6 z-40 bg-[#044cf4] hover:bg-[#033bd0] text-white w-12 h-12 flex items-center justify-center rounded-full shadow-md focus:outline-none focus:ring-2 focus:ring-[#044cf4]/30"
@@ -587,11 +623,11 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Layout condicional: admin vs usuário */}
+        {/* conditional layout: admin vs user */}
         {user?.role === 'admin' ? (
-          // LAYOUT ADMIN: Nova Reserva (full width) -> Todas as Reservas (full width) -> Histórico
+          // admin layout: new reservation (full width) -> all reservations (full width) -> history
           <div className="space-y-6">
-            {/* Formulário Nova Reserva - Full Width */}
+            {/* new reservation form - full width */}
             <div className="bg-white p-6 rounded-lg shadow-md">
               <h2 className="font-bold mb-4 text-lg text-[#044cf4]">
                 Nova Reserva
@@ -769,12 +805,12 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Seção Todas as Reservas - Grid para Admin */}
+            {/* all reservations section - grid layout for admin */}
             <div className="bg-white p-4 rounded-lg shadow">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-bold mb-4 text-lg">Todas as Reservas</h2>
 
-                {/* Filtro por sala */}
+                {/* room filter */}
                 <div className="relative inline-block">
                   <button
                     onClick={() =>
@@ -847,7 +883,7 @@ export default function Dashboard() {
                 </p>
               ) : (
                 <>
-                  {/* Grid 5 colunas x 3 linhas */}
+                  {/* grid: 5 columns x 3 rows */}
                   <div className="grid grid-cols-5 gap-4 mb-4">
                     {reservations
                       .filter((r) =>
@@ -1003,19 +1039,19 @@ export default function Dashboard() {
                             </div>
                           ) : (
                             <div>
-                              {/* ID da reserva */}
+                              {/* reservation id */}
                               <div className="text-xs text-gray-500 mb-1">
                                 ID:{' '}
                                 <span className="font-mono font-semibold">
                                   {String(r.id).padStart(5, '0')}
                                 </span>
                               </div>
-                              {/* Nome da sala */}
+                              {/* room name */}
                               <h4 className="font-semibold text-[#044cf4] text-base mb-2">
                                 {r.Room?.name}
                               </h4>
 
-                              {/* Data e horário */}
+                              {/* date and time */}
                               <div className="space-y-1.5 text-sm text-gray-600 mb-1.5">
                                 <div className="flex items-center gap-1.5">
                                   <svg
@@ -1062,7 +1098,7 @@ export default function Dashboard() {
                                 </div>
                               </div>
 
-                              {/* Informações adicionais */}
+                              {/* additional info */}
                               <div className="space-y-1.5 text-sm text-gray-600 mb-3">
                                 <div className="flex items-center gap-1.5">
                                   <svg
@@ -1130,7 +1166,7 @@ export default function Dashboard() {
                                 </div>
                               </div>
 
-                              {/* Botões de ação - horizontal no canto inferior direito */}
+                              {/* action buttons - horizontal in bottom right */}
                               {(user?.role === 'admin' ||
                                 r.User?.matricula === user?.matricula) && (
                                 <div className="flex gap-2 justify-end">
@@ -1154,7 +1190,7 @@ export default function Dashboard() {
                       ))}
                   </div>
 
-                  {/* Paginação */}
+                  {/* pagination */}
                   {Math.ceil(
                     reservations.filter((r) =>
                       adminRoomFilter ? r.Room?.name === adminRoomFilter : true
@@ -1234,7 +1270,7 @@ export default function Dashboard() {
             </div>
           </div>
         ) : (
-          // LAYOUT USUÁRIO: Grid com formulário (2 cols) + reservas (1 col)
+          // user layout: grid with form (2 cols) + reservations (1 col)
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
             <div className="bg-white p-6 rounded-lg shadow-md md:col-span-2">
               <h2 className="font-bold mb-4 text-lg text-[#044cf4]">
@@ -1656,11 +1692,11 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Histórico de Reservas */}
+        {/* reservation history */}
         <div className="mt-8 bg-white p-4 rounded-lg shadow">
           <h2 className="font-bold mb-4 text-lg">Histórico de Reservas</h2>
 
-          {/* Barra de pesquisa apenas para admin */}
+          {/* search bar (admin only) */}
           {user?.role === 'admin' && (
             <div className="mb-4">
               <input
@@ -1703,7 +1739,7 @@ export default function Dashboard() {
                     key={h.id}
                     className="bg-gray-50 rounded-lg p-3 opacity-75 border border-gray-200"
                   >
-                    {/* ID and status */}
+                    {/* id and status */}
                     <div className="flex items-center justify-between mb-2">
                       <div className="text-xs text-gray-500">
                         ID:{' '}
@@ -1722,12 +1758,12 @@ export default function Dashboard() {
                       </span>
                     </div>
 
-                    {/* Room name */}
+                    {/* room name */}
                     <h4 className="font-semibold text-gray-800 mb-2">
                       {h.Room?.name || `Sala ${h.roomId}`}
                     </h4>
 
-                    {/* Info line: Date and time */}
+                    {/* info line: date and time */}
                     <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -1748,7 +1784,7 @@ export default function Dashboard() {
                       </span>
                     </div>
 
-                    {/* Info line: User, quantity and reason */}
+                    {/* info line: user, quantity and reason */}
                     <div className="flex flex-wrap gap-4 text-xs text-gray-600">
                       <div className="flex items-center gap-1">
                         <svg
@@ -1811,7 +1847,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Paginação */}
+          {/* pagination */}
           {history.length > 0 && historyPagination.totalPages > 1 && (
             <div className="mt-4 flex items-center justify-between border-t pt-4">
               <div className="text-sm text-gray-600">
