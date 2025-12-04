@@ -49,6 +49,9 @@ export default function Dashboard() {
   });
   // Admin reservations pagination (5 cols × 3 rows = 15 per page)
   const [adminResPage, setAdminResPage] = useState(1);
+  const [adminRoomFilter, setAdminRoomFilter] = useState('');
+  const [allRooms, setAllRooms] = useState([]);
+  const [adminRoomDropdownOpen, setAdminRoomDropdownOpen] = useState(false);
   const ADMIN_RES_PER_PAGE = 15;
   const faqItems = [
     {
@@ -136,6 +139,17 @@ export default function Dashboard() {
       .then((r) => {
         console.log('Active reservations:', r.data);
         setReservations(r.data);
+      });
+    // Fetch all rooms for filter
+    axios
+      .get(API + '/rooms', {
+        headers: { Authorization: 'Bearer ' + token },
+      })
+      .then((r) => {
+        setAllRooms(r.data);
+      })
+      .catch((err) => {
+        console.error('Error fetching rooms:', err);
       });
     // Fetch history
     axios
@@ -755,15 +769,90 @@ export default function Dashboard() {
 
             {/* Seção Todas as Reservas - Grid para Admin */}
             <div className="bg-white p-4 rounded-lg shadow">
-              <h2 className="font-bold mb-4">Todas as reservas</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-bold">Todas as reservas</h2>
+
+                {/* Filtro por sala */}
+                <div className="relative inline-block">
+                  <button
+                    onClick={() =>
+                      setAdminRoomDropdownOpen(!adminRoomDropdownOpen)
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#044cf4] focus:ring-opacity-50 flex items-center gap-2"
+                  >
+                    {adminRoomFilter || 'Todas as salas'}
+                    <svg
+                      className={`w-4 h-4 transition-transform ${
+                        adminRoomDropdownOpen ? 'rotate-180' : ''
+                      }`}
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </button>
+
+                  {adminRoomDropdownOpen && (
+                    <div className="absolute top-full mt-1 w-full bg-white border border-gray-300 rounded shadow-lg z-50 max-h-40 overflow-y-auto">
+                      <div
+                        onClick={() => {
+                          setAdminRoomFilter('');
+                          setAdminResPage(1);
+                          setAdminRoomDropdownOpen(false);
+                        }}
+                        className={`px-3 py-2 cursor-pointer text-sm ${
+                          adminRoomFilter === ''
+                            ? 'bg-blue-600 text-white'
+                            : 'hover:bg-gray-100'
+                        }`}
+                      >
+                        Todas as salas
+                      </div>
+                      {allRooms
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((room) => (
+                          <div
+                            key={room.id}
+                            onClick={() => {
+                              setAdminRoomFilter(room.name);
+                              setAdminResPage(1);
+                              setAdminRoomDropdownOpen(false);
+                            }}
+                            className={`px-3 py-2 cursor-pointer text-sm ${
+                              adminRoomFilter === room.name
+                                ? 'bg-blue-600 text-white'
+                                : 'hover:bg-gray-100'
+                            }`}
+                          >
+                            {room.name}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {reservations.length === 0 ? (
                 <p className="text-gray-500 text-sm">Nenhuma reserva ativa.</p>
+              ) : reservations.filter((r) =>
+                  adminRoomFilter ? r.Room?.name === adminRoomFilter : true
+                ).length === 0 ? (
+                <p className="text-gray-500 text-sm">
+                  Nenhuma reserva ativa para {adminRoomFilter}.
+                </p>
               ) : (
                 <>
                   {/* Grid 5 colunas x 3 linhas */}
                   <div className="grid grid-cols-5 gap-4 mb-4">
                     {reservations
+                      .filter((r) =>
+                        adminRoomFilter
+                          ? r.Room?.name === adminRoomFilter
+                          : true
+                      )
                       .slice(
                         (adminResPage - 1) * ADMIN_RES_PER_PAGE,
                         adminResPage * ADMIN_RES_PER_PAGE
@@ -1064,13 +1153,38 @@ export default function Dashboard() {
                   </div>
 
                   {/* Paginação */}
-                  {Math.ceil(reservations.length / ADMIN_RES_PER_PAGE) > 1 && (
+                  {Math.ceil(
+                    reservations.filter((r) =>
+                      adminRoomFilter ? r.Room?.name === adminRoomFilter : true
+                    ).length / ADMIN_RES_PER_PAGE
+                  ) > 1 && (
                     <div className="mt-4 flex items-center justify-between border-t pt-4">
                       <div className="text-sm text-gray-600">
                         Página {adminResPage} de{' '}
-                        {Math.ceil(reservations.length / ADMIN_RES_PER_PAGE)} (
-                        {reservations.length} reserva
-                        {reservations.length !== 1 ? 's' : ''})
+                        {Math.ceil(
+                          reservations.filter((r) =>
+                            adminRoomFilter
+                              ? r.Room?.name === adminRoomFilter
+                              : true
+                          ).length / ADMIN_RES_PER_PAGE
+                        )}{' '}
+                        (
+                        {
+                          reservations.filter((r) =>
+                            adminRoomFilter
+                              ? r.Room?.name === adminRoomFilter
+                              : true
+                          ).length
+                        }{' '}
+                        reserva
+                        {reservations.filter((r) =>
+                          adminRoomFilter
+                            ? r.Room?.name === adminRoomFilter
+                            : true
+                        ).length !== 1
+                          ? 's'
+                          : ''}
+                        )
                       </div>
                       <div className="flex gap-2">
                         <button
