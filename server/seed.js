@@ -1,5 +1,5 @@
 const bcrypt = require('bcrypt');
-const { User, Room, sequelize } = require('./models');
+const { User, Room, Reservation, sequelize } = require('./models');
 
 async function seed() {
   try {
@@ -14,7 +14,7 @@ async function seed() {
     const adminPasswordHash = await bcrypt.hash('adminpass', 10);
 
     await User.create({
-      name: 'Administrador',
+      name: 'Ana',
       matricula: adminMatricula,
       passwordHash: adminPasswordHash, // <- CORRETO
       role: 'admin',
@@ -29,7 +29,7 @@ async function seed() {
     const commonUserPasswordHash = await bcrypt.hash('userpass', 10);
 
     await User.create({
-      name: 'Usuário Teste',
+      name: 'Juliana',
       matricula: commonUserMatricula,
       passwordHash: commonUserPasswordHash, // <- CORRETO
       role: 'user',
@@ -44,6 +44,10 @@ async function seed() {
       { name: 'Sala 101', capacity: 6 },
       { name: 'Sala 102', capacity: 8 },
       { name: 'Sala 201', capacity: 10 },
+      { name: 'Sala 202', capacity: 2 },
+      { name: 'Sala 301', capacity: 1 },
+      { name: 'Sala 302', capacity: 2 },
+      { name: 'Sala Rachel de Queiroz', capacity: 20 },
     ]);
 
     console.log('✔ Salas criadas');

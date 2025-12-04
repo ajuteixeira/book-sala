@@ -15,9 +15,17 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: 'Outro',
       },
+      status: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'ativa',
+        validate: {
+          isIn: [['ativa', 'concluída', 'cancelada']],
+        },
+      },
     },
     {
-      tableName: 'reservations',
+      tableName: 'Reservations',
     }
   );
   return Reservation;

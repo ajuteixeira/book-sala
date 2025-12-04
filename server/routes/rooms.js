@@ -28,14 +28,23 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // Return available rooms for a given date and time interval
-// Query params: date, startTime, endTime
+// Query params: date, startTime, endTime, quantity
 router.get('/available', authMiddleware, async (req, res) => {
   try {
-    const { date, startTime, endTime } = req.query;
+    const { date, startTime, endTime, quantity } = req.query;
     if (!date || !startTime || !endTime)
       return res
         .status(400)
         .json({ error: 'date, startTime and endTime required' });
+
+    // Validate quantity if provided
+    const requestedQuantity = quantity ? parseInt(quantity, 10) : null;
+    if (
+      requestedQuantity &&
+      (requestedQuantity < 1 || requestedQuantity > 1000)
+    ) {
+      return res.status(400).json({ error: 'Quantidade de pessoas inválida.' });
+    }
 
     // validate date is not in the past and within 30 days
     const today = new Date();
@@ -79,14 +88,23 @@ router.get('/available', authMiddleware, async (req, res) => {
         .json({ error: 'Tempo mínimo da reserva é 15 minutos.' });
     }
 
-    // Check if user already has a reservation on that date (one per day rule)
-    const existing = await Reservation.findOne({
-      where: { userId: req.user.id, date },
-    });
-    if (existing) {
-      return res.status(400).json({
-        error: 'Você já possui uma reserva para este dia. Selecione outro dia.',
+    // Check if user already has an ACTIVE or COMPLETED reservation on that date
+    // (Only for non-admin users)
+    if (req.user.role !== 'admin') {
+      const existing = await Reservation.findOne({
+        where: {
+          userId: req.user.id,
+          date,
+          status: { [Op.in]: ['ativa', 'concluída'] },
+        },
       });
+      if (existing) {
+        const message =
+          existing.status === 'concluída'
+            ? 'Você já possui uma reserva concluída para este dia.'
+            : 'Você já possui uma reserva para este dia. Selecione outro dia.';
+        return res.status(400).json({ error: message });
+      }
     }
 
     // check opening hours
@@ -121,7 +139,13 @@ router.get('/available', authMiddleware, async (req, res) => {
 
     const occupied = new Set(conflicts.map((c) => c.roomId));
     const rooms = await Room.findAll();
-    const available = rooms.filter((r) => !occupied.has(r.id));
+    let available = rooms.filter((r) => !occupied.has(r.id));
+
+    // Filter by capacity if quantity was provided
+    if (requestedQuantity) {
+      available = available.filter((r) => r.capacity >= requestedQuantity);
+    }
+
     res.json(available);
   } catch (err) {
     console.error(err);

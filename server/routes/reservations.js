@@ -30,22 +30,128 @@ const getOpeningHours = (dateStr) => {
 // - admin: all reservations
 // - user: only own reservations
 router.get('/', authMiddleware, async (req, res) => {
-  const where = {};
-  if (req.user.role !== 'admin') {
-    where.userId = req.user.id;
+  try {
+    // Marcar reservas passadas como concluídas automaticamente
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const currentTime = now.toTimeString().slice(0, 5); // HH:MM
+
+    // Encontrar todas as reservas ativas que já passaram
+    const pastReservations = await Reservation.findAll({
+      where: {
+        status: 'ativa',
+        [Op.or]: [
+          { date: { [Op.lt]: todayStr } }, // Data passada
+          {
+            [Op.and]: [
+              { date: todayStr },
+              { endTime: { [Op.lte]: currentTime } }, // Mesmo dia mas horário passou
+            ],
+          },
+        ],
+      },
+    });
+
+    // Marcar como concluídas
+    for (const res of pastReservations) {
+      res.status = 'concluída';
+      await res.save();
+    }
+
+    const where = {};
+    if (req.user.role !== 'admin') {
+      where.userId = req.user.id;
+    }
+    // Only active reservations
+    where.status = 'ativa';
+    const reservations = await Reservation.findAll({
+      where,
+      include: [
+        { model: Room },
+        { model: User, attributes: ['matricula', 'name', 'role'] },
+      ],
+      order: [
+        ['date', 'ASC'],
+        ['startTime', 'ASC'],
+      ],
+    });
+    res.json(reservations);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'internal error' });
   }
-  const reservations = await Reservation.findAll({
-    where,
-    include: [
-      { model: Room },
-      { model: User, attributes: ['matricula', 'name'] },
-    ],
-    order: [
-      ['date', 'ASC'],
-      ['startTime', 'ASC'],
-    ],
-  });
-  res.json(reservations);
+});
+
+// Get history (past reservations)
+router.get('/history', authMiddleware, async (req, res) => {
+  try {
+    // Marcar reservas passadas como concluídas automaticamente
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const currentTime = now.toTimeString().slice(0, 5); // HH:MM
+
+    // Encontrar todas as reservas ativas que já passaram
+    const pastReservations = await Reservation.findAll({
+      where: {
+        status: 'ativa',
+        [Op.or]: [
+          { date: { [Op.lt]: todayStr } }, // Data passada
+          {
+            [Op.and]: [
+              { date: todayStr },
+              { endTime: { [Op.lte]: currentTime } }, // Mesmo dia mas horário passou
+            ],
+          },
+        ],
+      },
+    });
+
+    // Marcar como concluídas
+    for (const res of pastReservations) {
+      res.status = 'concluída';
+      await res.save();
+    }
+
+    const where = {};
+    if (req.user.role !== 'admin') {
+      where.userId = req.user.id;
+    }
+    // Only completed or cancelled reservations
+    where.status = { [Op.in]: ['concluída', 'cancelada'] };
+
+    // Paginação
+    const page = parseInt(req.query.page) || 1;
+    const limit = 3; // 3 reservas por página
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await Reservation.findAndCountAll({
+      where,
+      include: [
+        { model: Room },
+        { model: User, attributes: ['matricula', 'name', 'role'] },
+      ],
+      order: [
+        ['date', 'DESC'],
+        ['startTime', 'DESC'],
+      ],
+      limit,
+      offset,
+    });
+
+    const totalPages = Math.ceil(count / limit);
+    res.json({
+      data: rows,
+      pagination: {
+        page,
+        limit,
+        total: count,
+        totalPages,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'internal error' });
+  }
 });
 
 // Create a reservation
@@ -59,25 +165,7 @@ router.post('/', authMiddleware, async (req, res) => {
       });
     }
 
-    // Validate date is not in the past and within 30 days
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const requested = new Date(date + 'T00:00:00');
-    requested.setHours(0, 0, 0, 0);
-    if (requested < today) {
-      return res.status(400).json({
-        error: 'Selecione uma data válida.',
-      });
-    }
-    const maxDate = new Date(today);
-    maxDate.setDate(maxDate.getDate() + 30);
-    if (requested > maxDate) {
-      return res
-        .status(400)
-        .json({ error: 'Você só pode fazer reservas até 30 dias no futuro.' });
-    }
-
-    // Validate times (start/end)
+    // Validate times (start/end) - basic format check
     const startMin = parseTimeToMinutes(startTime);
     const endMin = parseTimeToMinutes(endTime);
     if (startMin === null || endMin === null) {
@@ -100,37 +188,13 @@ router.post('/', authMiddleware, async (req, res) => {
         .json({ error: 'Tempo mínimo da reserva é 15 minutos.' });
     }
 
-    // check opening hours for this date
-    const hours = getOpeningHours(date);
-    if (!hours) {
-      return res
-        .status(400)
-        .json({ error: 'Biblioteca fechada nesse dia. Selecione outra data.' });
-    }
-    const openMin = parseTimeToMinutes(hours.open);
-    const closeMin = parseTimeToMinutes(hours.close);
-    if (startMin < openMin || endMin > closeMin) {
-      return res.status(400).json({
-        error: `Horário fora do horário de funcionamento: ${hours.open}–${hours.close}.`,
-      });
-    }
+    // Note: Date, time range, and same-day validation are done client-side during search
+    // Only check for room conflicts here
 
-    // Rule 1: Check if user already has a reservation on the same date
-    const sameDay = await Reservation.findOne({
-      where: {
-        userId: req.user.id,
-        date,
-      },
-    });
-    if (sameDay)
-      return res
-        .status(400)
-        .json({ error: 'Você já possui uma reserva para este dia.' });
-
-    // Rule 2: Check if user is not admin and already has 3 reservations
+    // Rule 1: Check if user is not admin and already has 3 active reservations
     if (req.user.role !== 'admin') {
       const count = await Reservation.count({
-        where: { userId: req.user.id },
+        where: { userId: req.user.id, status: 'ativa' },
       });
       if (count >= 3)
         return res
@@ -138,11 +202,12 @@ router.post('/', authMiddleware, async (req, res) => {
           .json({ error: 'Limite de 3 reservas por usuário atingido.' });
     }
 
-    // check for conflicts in same room and overlapping times
+    // Rule 2: check for conflicts in same room and overlapping times (only active reservations)
     const conflicts = await Reservation.findOne({
       where: {
         roomId,
         date,
+        status: 'ativa',
         [Op.or]: [
           {
             startTime: { [Op.between]: [startTime, endTime] },
@@ -180,7 +245,7 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-// Cancel (delete) reservation: user can delete their own; admin can delete any
+// Cancel reservation: user can cancel their own; admin can cancel any
 router.delete('/:id', authMiddleware, async (req, res) => {
   const id = req.params.id;
   const reservation = await Reservation.findByPk(id);
@@ -188,7 +253,9 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin' && reservation.userId !== req.user.id) {
     return res.status(403).json({ error: 'Forbidden' });
   }
-  await reservation.destroy();
+  // Mark as cancelled instead of deleting
+  reservation.status = 'cancelada';
+  await reservation.save();
   res.json({ success: true });
 });
 
@@ -209,40 +276,8 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     // Validate date constraints if date provided
     if (date) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const newDate = new Date(date + 'T00:00:00');
-      newDate.setHours(0, 0, 0, 0);
-
-      if (newDate < today) {
-        return res.status(400).json({
-          error:
-            'Selecione uma data válida. Não é possível reservar para o passado.',
-        });
-      }
-
-      const maxDate = new Date(today);
-      maxDate.setDate(maxDate.getDate() + 30);
-      if (newDate > maxDate) {
-        return res.status(400).json({
-          error: 'Você só pode fazer reservas até 30 dias no futuro.',
-        });
-      }
-
-      // Rule: user cannot have another reservation on the same date (exclude current reservation)
-      const existingSameDay = await Reservation.findOne({
-        where: {
-          userId: reservation.userId,
-          date,
-          id: { [Op.ne]: reservation.id },
-        },
-      });
-      if (existingSameDay) {
-        return res.status(400).json({
-          error:
-            'Você já possui uma reserva para este dia. Selecione outro dia.',
-        });
-      }
+      // Note: Date, time range, and same-day validation are done client-side during search
+      // Only check for room conflicts here
     }
 
     // If changing room/time/date, check for conflicts with other reservations for that room
@@ -321,6 +356,34 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     await reservation.save();
     res.json(reservation);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'internal error' });
+  }
+});
+
+// Mark past reservations as completed (can be called periodically)
+router.post('/complete-past', authMiddleware, async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().slice(0, 10);
+
+    // Find all active reservations with date before today
+    const pastReservations = await Reservation.findAll({
+      where: {
+        status: 'ativa',
+        date: { [Op.lt]: todayStr },
+      },
+    });
+
+    // Mark them as completed
+    for (const res of pastReservations) {
+      res.status = 'concluída';
+      await res.save();
+    }
+
+    res.json({ completed: pastReservations.length });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'internal error' });

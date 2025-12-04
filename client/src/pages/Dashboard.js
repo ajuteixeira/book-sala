@@ -37,6 +37,15 @@ export default function Dashboard() {
   // FAQ state
   const [showFAQ, setShowFAQ] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
+  // History state
+  const [history, setHistory] = useState([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPagination, setHistoryPagination] = useState({
+    page: 1,
+    limit: 3,
+    total: 0,
+    totalPages: 0,
+  });
   const faqItems = [
     {
       q: 'Quantas reservas posso fazer?',
@@ -100,6 +109,10 @@ export default function Dashboard() {
   const mm = String(todayObj.getMonth() + 1).padStart(2, '0');
   const dd = String(todayObj.getDate()).padStart(2, '0');
   const todayISO = `${yyyy}-${mm}-${dd}`;
+
+  // Create minDate in local time to avoid timezone issues
+  const minDate = new Date(yyyy, todayObj.getMonth(), todayObj.getDate());
+
   const maxObj = new Date(todayObj);
   maxObj.setDate(maxObj.getDate() + 30);
   const maxYYYY = maxObj.getFullYear();
@@ -107,13 +120,34 @@ export default function Dashboard() {
   const maxDD = String(maxObj.getDate()).padStart(2, '0');
   const maxISO = `${maxYYYY}-${maxMM}-${maxDD}`;
 
+  // Create maxDate in local time to avoid timezone issues
+  const maxDate = new Date(maxYYYY, maxObj.getMonth(), maxObj.getDate());
+
   useEffect(() => {
     if (!token) return;
     axios
       .get(API + '/reservations', {
         headers: { Authorization: 'Bearer ' + token },
       })
-      .then((r) => setReservations(r.data));
+      .then((r) => {
+        console.log('Active reservations:', r.data);
+        setReservations(r.data);
+      });
+    // Fetch history
+    axios
+      .get(API + '/reservations/history?page=1', {
+        headers: { Authorization: 'Bearer ' + token },
+      })
+      .then((r) => {
+        console.log('History data:', r.data);
+        setHistory(r.data.data);
+        setHistoryPagination(r.data.pagination);
+        setHistoryPage(1);
+      })
+      .catch((err) => {
+        console.error('Error fetching history:', err);
+        setHistory([]);
+      });
   }, []);
 
   const searchAvailable = async (e) => {
@@ -128,6 +162,46 @@ export default function Dashboard() {
       if (Number.isNaN(h) || Number.isNaN(m)) return null;
       return h * 60 + m;
     };
+
+    // Validate date is not in the past and within 30 days
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const requested = new Date(search.date + 'T00:00:00');
+    requested.setHours(0, 0, 0, 0);
+    if (requested < today) {
+      setError('Selecione uma data válida.');
+      return;
+    }
+
+    const maxDate = new Date(today);
+    maxDate.setDate(maxDate.getDate() + 30);
+    if (requested > maxDate) {
+      setError('Você só pode fazer reservas até 30 dias no futuro.');
+      return;
+    }
+
+    // For today: validate time hasn't passed yet
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const currentTime = now.toTimeString().slice(0, 5); // HH:MM
+
+    if (search.date === todayStr) {
+      const startMin = parseTimeToMinutes(search.startTime);
+      const currentMin = parseTimeToMinutes(currentTime);
+      if (startMin <= currentMin) {
+        setError(
+          'Não é possível fazer reservas para horários que já passaram.'
+        );
+        return;
+      }
+    }
+
+    // Validate quantity
+    const qty = parseInt(search.quantity, 10);
+    if (!qty || qty < 1 || qty > 1000) {
+      setError('Informe uma quantidade válida de pessoas');
+      return;
+    }
 
     const startMin = parseTimeToMinutes(search.startTime);
     const endMin = parseTimeToMinutes(search.endTime);
@@ -156,6 +230,26 @@ export default function Dashboard() {
       return;
     }
 
+    // Check if user already has an ACTIVE or COMPLETED reservation on the same date
+    // (Only for non-admin users)
+    if (user?.role !== 'admin') {
+      // Combine reservations (ativa) and history (concluída, cancelada)
+      const allReservations = [...reservations, ...history];
+      const sameDayReservation = allReservations.find(
+        (r) =>
+          r.date === search.date &&
+          (r.status === 'ativa' || r.status === 'concluída')
+      );
+      if (sameDayReservation) {
+        const message =
+          sameDayReservation.status === 'concluída'
+            ? 'Você já possui uma reserva concluída para este dia.'
+            : 'Você já possui uma reserva para este dia.';
+        setError(message);
+        return;
+      }
+    }
+
     let start = Date.now();
     try {
       setError('');
@@ -176,6 +270,7 @@ export default function Dashboard() {
     } catch (err) {
       const elapsed = Date.now() - start;
       const wait = Math.max(0, MIN_SPINNER_MS - elapsed);
+      console.log('Error from /rooms/available:', err?.response?.data);
       setTimeout(() => {
         setError(err?.response?.data?.error || 'Erro ao buscar salas');
         setLoading(false);
@@ -231,6 +326,13 @@ export default function Dashboard() {
         headers: { Authorization: 'Bearer ' + token },
       });
       setReservations(r.data);
+      // Atualizar histórico em tempo real (primeira página)
+      const h = await axios.get(API + '/reservations/history?page=1', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      setHistory(h.data.data);
+      setHistoryPagination(h.data.pagination);
+      setHistoryPage(1);
       setAvailableRooms([]);
       setSelectedRoomId('');
       setSearch({
@@ -252,10 +354,18 @@ export default function Dashboard() {
       await axios.delete(API + '/reservations/' + id, {
         headers: { Authorization: 'Bearer ' + token },
       });
+      // Atualizar reservas ativas
       const r = await axios.get(API + '/reservations', {
         headers: { Authorization: 'Bearer ' + token },
       });
       setReservations(r.data);
+      // Atualizar histórico em tempo real (primeira página)
+      const h = await axios.get(API + '/reservations/history?page=1', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      setHistory(h.data.data);
+      setHistoryPagination(h.data.pagination);
+      setHistoryPage(1);
     } catch (err) {
       setError(err?.response?.data?.error || 'Erro ao cancelar reserva');
     }
@@ -312,6 +422,13 @@ export default function Dashboard() {
         headers: { Authorization: 'Bearer ' + token },
       });
       setReservations(r.data);
+      // Atualizar histórico em tempo real (primeira página)
+      const h = await axios.get(API + '/reservations/history?page=1', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      setHistory(h.data.data);
+      setHistoryPagination(h.data.pagination);
+      setHistoryPage(1);
       setEditingId(null);
       setEditForm({
         date: '',
@@ -336,6 +453,20 @@ export default function Dashboard() {
     });
   };
 
+  const loadHistoryPage = async (page) => {
+    try {
+      const r = await axios.get(API + `/reservations/history?page=${page}`, {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      console.log('Pagination data:', r.data);
+      setHistory(r.data.data);
+      setHistoryPagination(r.data.pagination);
+      setHistoryPage(page);
+    } catch (err) {
+      console.error('Error loading history page:', err);
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -349,7 +480,8 @@ export default function Dashboard() {
           <h1 className="text-2xl text-[#044cf4] font-bold">BookSala</h1>
           <div>
             <span className="mr-4">
-              Olá, {user?.matricula} ({user?.role})
+              Olá, {user?.name}
+              {user?.role === 'admin' && ' (admin)'}
             </span>
             <button onClick={logout} className="px-3 py-1 border rounded">
               Sair
@@ -468,10 +600,10 @@ export default function Dashboard() {
                   setSearch({ ...search, date: iso });
                   setSearched(false);
                 }}
-                minDate={new Date(todayISO)}
-                maxDate={new Date(maxISO)}
+                minDate={minDate}
+                maxDate={maxDate}
                 filterDate={(d) => d.getDay() !== 0}
-                dateFormat="yyyy-MM-dd"
+                dateFormat="dd/MM/yyyy"
                 className="w-full p-3 border rounded mb-3"
               />
               <label className="block">Início</label>
@@ -565,7 +697,7 @@ export default function Dashboard() {
                 <h3 className="font-semibold mb-2 text-[#044cf4]">
                   Salas disponíveis
                 </h3>
-                <ul>
+                <ul className="max-h-60 overflow-y-auto border rounded-lg bg-gray-50 p-2">
                   {availableRooms.map((r) => (
                     <li
                       key={r.id}
@@ -575,6 +707,9 @@ export default function Dashboard() {
                         <div className="font-bold text-[#044cf4]">{r.name}</div>
                         <div className="text-sm text-gray-600">
                           {r.description}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Capacidade: {r.capacity} pessoas
                         </div>
                       </div>
                       <div>
@@ -646,10 +781,10 @@ export default function Dashboard() {
                             setError('');
                             setEditForm({ ...editForm, date: iso });
                           }}
-                          minDate={new Date(todayISO)}
-                          maxDate={new Date(maxISO)}
+                          minDate={minDate}
+                          maxDate={maxDate}
                           filterDate={(d) => d.getDay() !== 0}
-                          dateFormat="yyyy-MM-dd"
+                          dateFormat="dd/MM/yyyy"
                           className="w-full p-3 border rounded mb-3"
                         />
                       </div>
@@ -797,7 +932,14 @@ export default function Dashboard() {
                               d="M4 20v-2a4 4 0 014-4h8a4 4 0 014 4v2"
                             />
                           </svg>
-                          <span>{r.User?.matricula || '—'}</span>
+                          <span>
+                            {r.User?.name || '—'}
+                            {r.User?.role === 'admin' && (
+                              <span className="text-xs text-orange-600 ml-1">
+                                (admin)
+                              </span>
+                            )}
+                          </span>
                         </div>
 
                         <div className="flex items-center gap-1.5">
@@ -863,6 +1005,158 @@ export default function Dashboard() {
               ))}
             </ul>
           </div>
+        </div>
+
+        {/* Histórico de Reservas */}
+        <div className="mt-8 bg-white p-4 rounded-lg shadow">
+          <h2 className="font-bold mb-4 text-lg">Histórico de Reservas</h2>
+          {history.length === 0 ? (
+            <p className="text-gray-500 text-sm">
+              Nenhuma reserva no histórico.
+            </p>
+          ) : (
+            <div className="space-y-2 max-w-4xl">
+              {history.map((h) => (
+                <div
+                  key={h.id}
+                  className="bg-gray-50 rounded-lg p-3 opacity-75 border border-gray-200"
+                >
+                  {/* Header: Room name and status badge */}
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-semibold text-gray-800">
+                      {h.Room?.name || `Sala ${h.roomId}`}
+                    </h4>
+                    <span
+                      className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        h.status === 'concluída'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-300 text-gray-700'
+                      }`}
+                    >
+                      {h.status === 'concluída' ? 'Concluída' : 'Cancelada'}
+                    </span>
+                  </div>
+
+                  {/* Info line: Date and time */}
+                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      className="w-4 h-4 flex-shrink-0"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <span className="font-medium">
+                      {formatDate(h.date)} • {h.startTime}–{h.endTime}
+                    </span>
+                  </div>
+
+                  {/* Info line: User, quantity and reason */}
+                  <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+                    <div className="flex items-center gap-1">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        className="w-3 h-3 flex-shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                        />
+                      </svg>
+                      <span className="truncate max-w-xs">
+                        {h.User?.name || 'Usuário'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        className="w-3 h-3 flex-shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                        />
+                      </svg>
+                      <span>
+                        {h.quantity} {h.quantity > 1 ? 'pessoas' : 'pessoa'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        className="w-3 h-3 flex-shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                        />
+                      </svg>
+                      <span className="truncate max-w-xs">{h.reason}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Paginação */}
+          {history.length > 0 && historyPagination.totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between border-t pt-4">
+              <div className="text-sm text-gray-600">
+                Página {historyPagination.page} de{' '}
+                {historyPagination.totalPages}({historyPagination.total} reserva
+                {historyPagination.total !== 1 ? 's' : ''})
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => loadHistoryPage(historyPagination.page - 1)}
+                  disabled={historyPagination.page === 1}
+                  className={`px-3 py-1 border rounded text-sm ${
+                    historyPagination.page === 1
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-white text-[#044cf4] hover:bg-[#e6f0ff]'
+                  }`}
+                >
+                  ← Anterior
+                </button>
+                <button
+                  onClick={() => loadHistoryPage(historyPagination.page + 1)}
+                  disabled={
+                    historyPagination.page === historyPagination.totalPages
+                  }
+                  className={`px-3 py-1 border rounded text-sm ${
+                    historyPagination.page === historyPagination.totalPages
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-white text-[#044cf4] hover:bg-[#e6f0ff]'
+                  }`}
+                >
+                  Próxima →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
