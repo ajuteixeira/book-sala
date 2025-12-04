@@ -83,6 +83,14 @@ router.post('/', authMiddleware, async (req, res) => {
     if (startMin === null || endMin === null) {
       return res.status(400).json({ error: 'Horário inválido.' });
     }
+    // minutes must be multiples of 15
+    const startMinPart = parseInt(startTime.split(':')[1], 10);
+    const endMinPart = parseInt(endTime.split(':')[1], 10);
+    if (startMinPart % 15 !== 0 || endMinPart % 15 !== 0) {
+      return res
+        .status(400)
+        .json({ error: 'Minutos devem ser múltiplos de 15 (ex: 00,15,30,45)' });
+    }
     if (startMin > endMin) {
       return res.status(400).json({ error: 'Hora de término inválida.' });
     }
@@ -249,6 +257,14 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (checkStartMin === null || checkEndMin === null) {
       return res.status(400).json({ error: 'Horário inválido.' });
     }
+    // minutes must be multiples of 15
+    const checkStartMinPart = parseInt(checkStart.split(':')[1], 10);
+    const checkEndMinPart = parseInt(checkEnd.split(':')[1], 10);
+    if (checkStartMinPart % 15 !== 0 || checkEndMinPart % 15 !== 0) {
+      return res
+        .status(400)
+        .json({ error: 'Minutos devem ser múltiplos de 15 (ex: 00,15,30,45)' });
+    }
     if (checkStartMin > checkEndMin) {
       return res.status(400).json({ error: 'Hora de término inválida.' });
     }
@@ -288,11 +304,9 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const openMin2 = parseTimeToMinutes(hours2.open);
     const closeMin2 = parseTimeToMinutes(hours2.close);
     if (checkStartMin < openMin2 || checkEndMin > closeMin2) {
-      return res
-        .status(400)
-        .json({
-          error: `Horário fora do horário de funcionamento: ${hours2.open}–${hours2.close}.`,
-        });
+      return res.status(400).json({
+        error: `Horário fora do horário de funcionamento: ${hours2.open}–${hours2.close}.`,
+      });
     }
 
     // apply updates

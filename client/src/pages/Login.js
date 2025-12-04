@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
-export default function Login(){
+export default function Login() {
   const [matricula, setMatricula] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -11,7 +11,10 @@ export default function Login(){
   const submit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(API + '/auth/login', { matricula, password });
+      const res = await axios.post(API + '/auth/login', {
+        matricula,
+        password,
+      });
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data.user));
       window.location.href = '/';
@@ -22,14 +25,28 @@ export default function Login(){
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
-      <form onSubmit={submit} className="w-full max-w-md bg-white p-6 rounded shadow">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-md bg-white p-6 rounded shadow"
+      >
         <h2 className="text-xl font-bold mb-4">BookSala - Entrar</h2>
         {error && <div className="text-red-600 mb-2">{error}</div>}
         <label className="block mb-2">Matrícula</label>
-        <input value={matricula} onChange={e=>setMatricula(e.target.value)} className="w-full p-2 border mb-3" />
+        <input
+          value={matricula}
+          onChange={(e) => setMatricula(e.target.value)}
+          className="w-full p-2 border mb-3"
+        />
         <label className="block mb-2">Senha</label>
-        <input value={password} onChange={e=>setPassword(e.target.value)} type="password" className="w-full p-2 border mb-4" />
-        <button className="w-full py-2 bg-blue-600 text-white rounded">Entrar</button>
+        <input
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          type="password"
+          className="w-full p-2 border mb-4"
+        />
+        <button className="w-full py-2 bg-[#044cf4] hover:bg-[#033bd0] text-white rounded">
+          Entrar
+        </button>
       </form>
     </div>
   );

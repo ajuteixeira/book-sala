@@ -62,6 +62,14 @@ router.get('/available', authMiddleware, async (req, res) => {
     if (startMin === null || endMin === null) {
       return res.status(400).json({ error: 'Horário inválido.' });
     }
+    // minutes must be multiples of 15
+    const startMinPart = parseInt(startTime.split(':')[1], 10);
+    const endMinPart = parseInt(endTime.split(':')[1], 10);
+    if (startMinPart % 15 !== 0 || endMinPart % 15 !== 0) {
+      return res
+        .status(400)
+        .json({ error: 'Minutos devem ser múltiplos de 15 (ex: 00,15,30,45)' });
+    }
     if (startMin > endMin) {
       return res.status(400).json({ error: 'Hora de término inválida.' });
     }
@@ -91,11 +99,9 @@ router.get('/available', authMiddleware, async (req, res) => {
     const openMin = parseTimeToMinutes(hours.open);
     const closeMin = parseTimeToMinutes(hours.close);
     if (startMin < openMin || endMin > closeMin) {
-      return res
-        .status(400)
-        .json({
-          error: `Horário fora do horário de funcionamento: ${hours.open}–${hours.close}.`,
-        });
+      return res.status(400).json({
+        error: `Horário fora do horário de funcionamento: ${hours.open}–${hours.close}.`,
+      });
     }
 
     // find reservations that overlap with requested interval on that date
