@@ -40,6 +40,7 @@ export default function Dashboard() {
   // History state
   const [history, setHistory] = useState([]);
   const [historyPage, setHistoryPage] = useState(1);
+  const [historySearchFilter, setHistorySearchFilter] = useState('');
   const [historyPagination, setHistoryPagination] = useState({
     page: 1,
     limit: 3,
@@ -911,32 +912,63 @@ export default function Dashboard() {
                             </div>
                           ) : (
                             <div>
+                              {/* ID da reserva */}
+                              <div className="text-xs text-gray-500 mb-1">
+                                ID:{' '}
+                                <span className="font-mono font-semibold">
+                                  {String(r.id).padStart(5, '0')}
+                                </span>
+                              </div>
                               {/* Nome da sala */}
                               <h4 className="font-semibold text-[#044cf4] text-base mb-2">
                                 {r.Room?.name}
                               </h4>
 
                               {/* Data e horário */}
-                              <div className="flex items-center gap-1.5 text-sm text-gray-600 mb-2">
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 24 24"
-                                  className="w-4 h-4 flex-shrink-0"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="1.8"
-                                >
-                                  <circle cx="12" cy="12" r="9" />
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    d="M12 7v5l3 3"
-                                  />
-                                </svg>
-                                <span>
-                                  {formatDate(r.date)} • {r.startTime}–
-                                  {r.endTime}
-                                </span>
+                              <div className="space-y-1.5 text-sm text-gray-600 mb-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    className="w-4 h-4 flex-shrink-0"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.8"
+                                  >
+                                    <rect
+                                      x="3"
+                                      y="4"
+                                      width="18"
+                                      height="18"
+                                      rx="2"
+                                      ry="2"
+                                    />
+                                    <line x1="16" y1="2" x2="16" y2="6" />
+                                    <line x1="8" y1="2" x2="8" y2="6" />
+                                    <line x1="3" y1="10" x2="21" y2="10" />
+                                  </svg>
+                                  <span>{formatDate(r.date)}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    className="w-4 h-4 flex-shrink-0"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.8"
+                                  >
+                                    <circle cx="12" cy="12" r="9" />
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      d="M12 7v5l3 3"
+                                    />
+                                  </svg>
+                                  <span>
+                                    {r.startTime}–{r.endTime}
+                                  </span>
+                                </div>
                               </div>
 
                               {/* Informações adicionais */}
@@ -1406,6 +1438,13 @@ export default function Dashboard() {
                       </div>
                     ) : (
                       <div>
+                        {/* ID da reserva */}
+                        <div className="text-xs text-gray-500 mb-1">
+                          ID:{' '}
+                          <span className="font-mono font-semibold">
+                            {String(r.id).padStart(5, '0')}
+                          </span>
+                        </div>
                         {/* Nome da sala */}
                         <h4 className="font-semibold text-[#044cf4] text-base mb-2">
                           {r.Room?.name}
@@ -1502,114 +1541,155 @@ export default function Dashboard() {
         {/* Histórico de Reservas */}
         <div className="mt-8 bg-white p-4 rounded-lg shadow">
           <h2 className="font-bold mb-4 text-lg">Histórico de Reservas</h2>
+
+          {/* Barra de pesquisa apenas para admin */}
+          {user?.role === 'admin' && (
+            <div className="mb-4">
+              <input
+                type="text"
+                placeholder="Pesquise por ID, usuário, sala, motivo..."
+                value={historySearchFilter}
+                onChange={(e) => {
+                  setHistorySearchFilter(e.target.value);
+                  setHistoryPage(1);
+                }}
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#044cf4]"
+              />
+            </div>
+          )}
+
           {history.length === 0 ? (
             <p className="text-gray-500 text-sm">
               Nenhuma reserva no histórico.
             </p>
           ) : (
             <div className="space-y-2 w-full">
-              {history.map((h) => (
-                <div
-                  key={h.id}
-                  className="bg-gray-50 rounded-lg p-3 opacity-75 border border-gray-200"
-                >
-                  {/* Header: Room name and status badge */}
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-semibold text-gray-800">
+              {history
+                .filter((h) => {
+                  if (!historySearchFilter) return true;
+                  const searchLower = historySearchFilter.toLowerCase();
+                  const id = String(h.id).padStart(5, '0');
+                  const userName = h.User?.name || '';
+                  const roomName = h.Room?.name || '';
+                  const reason = h.reason || '';
+
+                  return (
+                    id.includes(searchLower) ||
+                    userName.toLowerCase().includes(searchLower) ||
+                    roomName.toLowerCase().includes(searchLower) ||
+                    reason.toLowerCase().includes(searchLower)
+                  );
+                })
+                .map((h) => (
+                  <div
+                    key={h.id}
+                    className="bg-gray-50 rounded-lg p-3 opacity-75 border border-gray-200"
+                  >
+                    {/* ID and status */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-xs text-gray-500">
+                        ID:{' '}
+                        <span className="font-mono font-semibold">
+                          {String(h.id).padStart(5, '0')}
+                        </span>
+                      </div>
+                      <span
+                        className={`px-2 py-1 text-xs font-medium rounded-full ${
+                          h.status === 'concluída'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-gray-300 text-gray-700'
+                        }`}
+                      >
+                        {h.status === 'concluída' ? 'Concluída' : 'Cancelada'}
+                      </span>
+                    </div>
+
+                    {/* Room name */}
+                    <h4 className="font-semibold text-gray-800 mb-2">
                       {h.Room?.name || `Sala ${h.roomId}`}
                     </h4>
-                    <span
-                      className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        h.status === 'concluída'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-300 text-gray-700'
-                      }`}
-                    >
-                      {h.status === 'concluída' ? 'Concluída' : 'Cancelada'}
-                    </span>
-                  </div>
 
-                  {/* Info line: Date and time */}
-                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      className="w-4 h-4 flex-shrink-0"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <span className="font-medium">
-                      {formatDate(h.date)} • {h.startTime}–{h.endTime}
-                    </span>
-                  </div>
-
-                  {/* Info line: User, quantity and reason */}
-                  <div className="flex flex-wrap gap-4 text-xs text-gray-600">
-                    <div className="flex items-center gap-1">
+                    {/* Info line: Date and time */}
+                    <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 24 24"
-                        className="w-3 h-3 flex-shrink-0"
+                        className="w-4 h-4 flex-shrink-0"
                         fill="none"
                         stroke="currentColor"
-                        strokeWidth="2"
+                        strokeWidth="1.8"
                       >
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                         />
                       </svg>
-                      <span className="truncate max-w-xs">
-                        {h.User?.name || 'Usuário'}
+                      <span className="font-medium">
+                        {formatDate(h.date)} • {h.startTime}–{h.endTime}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        className="w-3 h-3 flex-shrink-0"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                        />
-                      </svg>
-                      <span>
-                        {h.quantity} {h.quantity > 1 ? 'pessoas' : 'pessoa'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        className="w-3 h-3 flex-shrink-0"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-                        />
-                      </svg>
-                      <span className="truncate max-w-xs">{h.reason}</span>
+
+                    {/* Info line: User, quantity and reason */}
+                    <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+                      <div className="flex items-center gap-1">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          className="w-3 h-3 flex-shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                          />
+                        </svg>
+                        <span className="truncate max-w-xs">
+                          {h.User?.name || 'Usuário'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          className="w-3 h-3 flex-shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                          />
+                        </svg>
+                        <span>
+                          {h.quantity} {h.quantity > 1 ? 'pessoas' : 'pessoa'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          className="w-3 h-3 flex-shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                          />
+                        </svg>
+                        <span className="truncate max-w-xs">{h.reason}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           )}
 
