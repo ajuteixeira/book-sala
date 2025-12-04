@@ -593,7 +593,9 @@ export default function Dashboard() {
           <div className="space-y-6">
             {/* Formulário Nova Reserva - Full Width */}
             <div className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="font-bold mb-2 text-[#044cf4]">Nova Reserva</h2>
+              <h2 className="font-bold mb-4 text-lg text-[#044cf4]">
+                Nova Reserva
+              </h2>
               {error && <div className="text-red-600 mb-2">{error}</div>}
 
               <form
@@ -770,7 +772,7 @@ export default function Dashboard() {
             {/* Seção Todas as Reservas - Grid para Admin */}
             <div className="bg-white p-4 rounded-lg shadow">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-bold">Todas as reservas</h2>
+                <h2 className="font-bold mb-4 text-lg">Todas as Reservas</h2>
 
                 {/* Filtro por sala */}
                 <div className="relative inline-block">
@@ -1235,7 +1237,9 @@ export default function Dashboard() {
           // LAYOUT USUÁRIO: Grid com formulário (2 cols) + reservas (1 col)
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
             <div className="bg-white p-6 rounded-lg shadow-md md:col-span-2">
-              <h2 className="font-bold mb-2 text-[#044cf4]">Nova Reserva</h2>
+              <h2 className="font-bold mb-4 text-lg text-[#044cf4]">
+                Nova Reserva
+              </h2>
               {error && <div className="text-red-600 mb-2">{error}</div>}
 
               {reservations.length >= 3 && (
@@ -1412,7 +1416,7 @@ export default function Dashboard() {
             </div>
 
             <div className="bg-white p-4 rounded-lg shadow md:col-span-1">
-              <h2 className="font-bold mb-2">Minhas reservas</h2>
+              <h2 className="font-bold mb-4 text-lg">Minhas reservas</h2>
               <ul>
                 {reservations.map((r) => (
                   <li
